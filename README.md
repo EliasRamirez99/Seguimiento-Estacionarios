@@ -3,6 +3,9 @@
 Aplicación web para el seguimiento semanal de los equipos estacionarios de **OPS (Oilfield
 Production Services)**, según un cronograma de cargas por día.
 
+**Repositorio:** https://github.com/EliasRamirez99/Seguimiento-Estacionarios
+**App online:** https://claude.ai/artifact/FAuKG35AiHLsnKhnUR7h1L
+
 ## Contenido del repositorio
 
 | Archivo | Descripción |
