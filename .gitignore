@@ -1,0 +1,15 @@
+# Logs y respaldos generados
+sync_log.txt
+*_backup_*.json
+equipos_backup*.json
+
+# Credenciales / secretos (NO versionar la API key)
+apikey.txt
+*.key
+.env
+
+# Temporales
+*.tmp
+~$*
+.DS_Store
+Thumbs.db

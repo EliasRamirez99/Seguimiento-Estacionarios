@@ -1,0 +1,57 @@
+PARTE / SEGUIMIENTO DE EQUIPOS ESTACIONARIOS — OPS
+===================================================
+
+HAY DOS FORMAS DE USARLO
+------------------------
+
+1) ARCHIVO LOCAL (doble clic) --> index.html
+   - Abrís "index.html" (doble clic) y funciona en tu navegador, con los 977 equipos
+     ya adentro del archivo. No necesita internet para lo básico (ver, filtrar, editar).
+   - Los cambios se guardan EN ESE NAVEGADOR (en esta misma computadora).
+   - Recomendado abrirlo con Chrome o Edge.
+   - Para que se vea el logo, mantené "ops-logo.webp" en la misma carpeta que el index.html.
+   - Los gráficos y la descarga de PDF usan internet; si estás sin conexión, igual
+     andan la lista, los filtros, la edición y la descarga de CSV.
+
+2) APP ONLINE (link) --> la mejor opción para compartir y no perder datos
+   https://claude.ai/artifact/FAuKG35AiHLsnKhnUR7h1L
+   - Se abre desde la app de Claude con tu sesión de OPS.
+   - Los cambios se guardan EN TU CUENTA y se sincronizan entre dispositivos.
+   - Se puede compartir con otros desde el menú "Compartir".
+
+IMPORTANTE: el archivo local y la app online guardan por separado. Si cargás en el
+archivo local, esos datos quedan en esa computadora; si cargás en el link, quedan en
+tu cuenta. Elegí una forma y usá siempre esa, o exportá/compartí con el informe.
+
+QUÉ HAY EN ESTA CARPETA
+-----------------------
+  - index.html ....... la app autónoma (doble clic). Tiene los datos embebidos.
+  - equipos.json ..... la lista de equipos (la usa la versión online / el sync).
+  - ops-logo.webp .... el logo de OPS (debe estar al lado del index.html).
+  - sync_api.py ...... script para traer datos desde la API de OPS (hoy la API da error;
+                       ver más abajo).
+  - sync_log.txt ..... registro de cada corrida del sync.
+
+CÓMO SE USA
+-----------
+  - Arriba hay filtros (buscar, día de carga, estado de registro, tarea, propietario, etc.).
+  - En cada equipo, botón "Actualizar": cambiás estado / ubicación / observaciones y
+    "Registrar dato". Queda guardado con la fecha.
+  - "Generar informe": PDF o CSV de los equipos del día (o de todos).
+
+CRONOGRAMA DE CARGAS (vigente desde el 25/11/2026)
+--------------------------------------------------
+  Viernes .... Generadores
+  Lunes ...... Zapato Compactador
+  Martes ..... Chulengo
+  Miércoles .. Motosoldadora y Motocompresores
+  Jueves ..... El resto de los equipos
+
+SINCRONIZACIÓN CON LA API DE OPS (opcional, hoy no disponible)
+-------------------------------------------------------------
+  El endpoint de la API (v3/equipos-estacionarios) hoy devuelve error 500 del lado de
+  OPS/Tecfield, así que la sincronización automática no trae datos por ahora. El script
+  sync_api.py queda listo para cuando lo rehabiliten:
+      python sync_api.py        (reescribe equipos.json desde la API)
+  y después se vuelve a publicar la app online. Mientras tanto, la app funciona
+  perfectamente con los datos actuales.
