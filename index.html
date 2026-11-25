@@ -565,7 +565,7 @@ async function makePDF(val){
 
 function openReport(){
   const wd=new Date().getDay(); const def=(wd>=1&&wd<=5)?'hoy':'all';
-  const opts=[['hoy','Hoy — '+cap(DAYNAMES[wd])],['5','Viernes · Generadores'],['1','Lunes · Zapato Compactador'],['2','Martes · Chulengo'],['3','Miércoles · Motosold./Motocompr.'],['4','Jueves · El resto'],['all','Todos los equipos']];
+  const opts=[['hoy','Hoy — '+cap(DAYNAMES[wd])],['1','Lunes · Zapato Compactador'],['2','Martes · Chulengo'],['3','Miércoles · Motosold./Motocompr.'],['4','Jueves · El resto'],['5','Viernes · Generadores'],['all','Sábado · Todos los equipos']];
   const root=$('#modalRoot');
   root.innerHTML='<div class="scrim" id="scrim"><div class="modal"><div class="mhead"><div><h3>Generar informe</h3><div class="sub2" style="margin-top:3px">Parte en PDF de los equipos que corresponden al día</div></div><button class="x" id="mx">✕</button></div>'+
     '<div class="mbody"><div class="mfld"><label>Día / grupo a informar</label><select id="rptDia">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===def?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'+
