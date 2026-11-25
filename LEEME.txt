@@ -41,7 +41,7 @@ CÓMO SE USA
     "Registrar dato". Queda guardado con la fecha.
   - "Generar informe": PDF o CSV de los equipos del día (o de todos).
 
-CRONOGRAMA DE CARGAS (vigente desde el 25/11/2026)
+CRONOGRAMA DE CARGAS (vigente desde el jueves 26/11/2026)
 --------------------------------------------------
   Viernes .... Generadores
   Lunes ...... Zapato Compactador

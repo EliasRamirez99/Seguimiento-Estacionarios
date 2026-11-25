@@ -18,4 +18,9 @@ Formato: fecha · descripción del cambio / carga de datos.
 - Datos de prueba de revisiones borrados; se comienza a operar el 26/11/2026.
 - `sync_api.py` listo para sincronizar desde la API de OPS cuando el endpoint v3 vuelva a responder.
 
+## 2026-11-26
+
+- Inicio del cronograma movido al **jueves 26/11/2026** (se empieza a cargar ese día).
+  Hasta esa fecha todo figura como "Programado".
+
 <!-- Agregar aquí cada nueva carga de datos o modificación, con su fecha. -->

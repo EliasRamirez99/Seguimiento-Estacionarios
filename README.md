@@ -26,7 +26,7 @@ Production Services)**, según un cronograma de cargas por día.
 
 > Las dos formas guardan por separado. Para trabajo en conjunto, usar la versión online.
 
-## Cronograma de cargas (vigente desde 25/11/2026)
+## Cronograma de cargas (vigente desde 26/11/2026)
 
 | Día | Tarea |
 |---|---|
