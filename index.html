@@ -64,6 +64,13 @@ header{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:va
 .alert.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
 .alert.ok{background:var(--ok-soft);border-color:color-mix(in srgb,var(--ok) 42%,transparent)}
 .alert .btn-alert{white-space:nowrap}
+#syncBar{margin-top:16px;border-radius:var(--r);padding:11px 15px;font-size:.85rem;display:flex;gap:10px;align-items:flex-start;border:1px solid;box-shadow:var(--shadow)}
+#syncBar .t{font-weight:700}
+#syncBar small{color:var(--muted)}
+#syncBar.ok{background:var(--ok-soft);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+#syncBar.ok .t{color:var(--ok)}
+#syncBar.warn{background:var(--crit-soft);border-color:color-mix(in srgb,var(--crit) 45%,transparent)}
+#syncBar.warn .t{color:var(--crit)}
 
 .sched{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .sd{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:1px}
@@ -182,6 +189,7 @@ tbody tr:last-child td{border-bottom:none}
 </header>
 
 <div class="page">
+  <div id="syncBar" hidden></div>
   <div class="alert warn" id="alertBox" hidden>
     <span class="ico" id="alertIco">⚠️</span>
     <div class="msg" id="alertMsg"></div>
@@ -256,7 +264,7 @@ const DAYNAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sáb
 const DAY_LABEL={5:'Generadores',1:'Zapato Compactador',2:'Chulengo',3:'Motosoldadora y Motocompresores',4:'el resto de los equipos'};
 function tareaDay(t){ return (t in DAY_BY_TAREA)?DAY_BY_TAREA[t]:DEFAULT_DAY; }
 const PALETTE=['#0e95cd','#1f9d57','#c9801f','#cf3f37','#7a5cc0','#1aa3a3','#d06ba0','#6b8e23','#c2593b','#2d7dd2','#8a8f98','#43b36b','#e0a44e','#9b6dd6','#df6a60','#3aa0a0','#b07cc6'];
-let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[];
+let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[], dbWritable=false;
 const charts={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -292,7 +300,14 @@ function regStatus(eq,st){
   return {key:'vencido',label:'Vencido',cls:'crit',sub:'hace '+n+' d',W};
 }
 function cur(eq){ const s=STATE.get(eq._k)||{}; return {estado:s.estado||eq.estadoBase,ubicacion:s.ubicacion!=null?s.ubicacion:eq.ubicacionBase,obs:s.obs||'',lastUpdate:s.lastUpdate||null,by:s.by||null}; }
-function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+function setSyncBar(state){
+  const b=$('#syncBar'); if(!b) return;
+  if(state==='ok'){ b.hidden=false; b.className='ok'; b.innerHTML='<span>✅</span><div><span class="t">Conectado a la base compartida.</span> <small>Los cambios se guardan para todo el equipo y se ven en tiempo real.</small></div>'; }
+  else if(state==='readonly'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>👁️</span><div><span class="t">Solo lectura.</span> <small>Ves los datos del equipo pero no podés editar. Pedile al dueño del parte que te invite como <b>Editor</b>.</small></div>'; }
+  else if(state==='offline'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>⚠️</span><div><span class="t">No estás conectado a la base compartida.</span> <small>Tus cambios quedan solo en este navegador y NO se comparten. Abrí el link con tu sesión de Claude iniciada y con acceso de edición.</small></div>'; }
+  else { b.hidden=true; }
+}
 // Descarga: usa la capacidad del artifact si existe; si no (archivo local / navegador normal), descarga directa.
 async function saveFile(filename, data, mime){
   if(downloads){ try{ await downloads.save({filename, data}); return true; }catch(e){} }
@@ -325,17 +340,20 @@ async function initPersistence(){
   try{ downloads=await claude.use('downloads'); }catch(e){ downloads=null; }
   try{ db=await claude.use('db'); }catch(e){ db=null; }
   if(db){
-    $('#persistNote').textContent=' · Cambios guardados en tu cuenta (se sincronizan entre dispositivos).';
+    let perm=null; try{ perm = (user&&user.can)? await user.can('data.write') : null; }catch(e){ perm=null; }
+    dbWritable = perm!==false;                       // true o null = optimista; false = solo lectura
+    setSyncBar(perm===false?'readonly':'ok');
+    $('#persistNote').textContent='';
     try{
       db.collection('registros').onSnapshot(snap=>{
         const docs=(snap&&snap.docs)||[];
         const m=new Map();
         docs.forEach(doc=>{ try{ if(doc&&doc.exists===false) return; const d=(doc&&doc.data)?doc.data():doc; const id=doc&&doc.id; if(id&&d) m.set(id,Object.assign({},d)); }catch(_){} });
-        STATE=m; saveLocal(); updateAll();   // la base es la fuente; se refleja también en el navegador
-      }, err=>{ db=null; $('#persistNote').textContent=' · Cambios guardados en este navegador.'; loadLocal(); updateAll(); });
-    }catch(e){ db=null; $('#persistNote').textContent=' · Cambios guardados en este navegador.'; }
+        STATE=m; saveLocal(); updateAll();           // la base compartida es la fuente única de verdad
+      }, err=>{ db=null; dbWritable=false; setSyncBar('offline'); loadLocal(); updateAll(); });
+    }catch(e){ db=null; dbWritable=false; setSyncBar('offline'); }
   }else{
-    $('#persistNote').textContent=' · Cambios guardados en este navegador.';
+    setSyncBar('offline'); $('#persistNote').textContent='';
   }
 }
 function loadLocal(){ try{ const raw=localStorage.getItem('ops_registros_v2'); if(raw){ STATE=new Map(Object.entries(JSON.parse(raw))); } }catch(e){} try{ localStorage.removeItem('ops_registros'); }catch(e){} }
@@ -344,14 +362,14 @@ function saveLocal(){ try{ const o={}; STATE.forEach((v,k)=>o[k]=v); localStorag
 async function saveRecord(eq,patch){
   const rec=Object.assign({},STATE.get(eq._k)||{},patch,{_k:eq._k,codigo:eq.codigo,lastUpdate:new Date().toISOString(),by:uid||null});
   STATE.set(eq._k,rec);
-  saveLocal();     // guarda SIEMPRE en el navegador (respaldo inmediato)
-  updateAll();
-  if(db){ try{ await db.collection('registros').doc(eq._k).set(rec); }catch(e){ toast('Guardado local (la base rechazó el cambio)'); } }
+  saveLocal(); updateAll();
+  if(db){ try{ await db.collection('registros').doc(eq._k).set(rec); return 'synced'; }catch(e){ dbWritable=false; setSyncBar('readonly'); return 'readonly'; } }
+  return 'local';
 }
+function saveMsg(r,code){ return r==='synced'?('Dato registrado · '+(code||'equipo')):r==='readonly'?'⚠ Sin permiso para editar la base compartida':'⚠ Guardado solo en este navegador — no se comparte'; }
 async function markNoChange(eq){
-  const c=cur(eq);
-  await saveRecord(eq,{estado:c.estado,ubicacion:c.ubicacion,obs:c.obs,sinCambios:true});
-  toast('Sin cambios · '+(eq.codigo||'equipo')+' marcado al día');
+  const r=await saveRecord(eq,Object.assign({},cur(eq),{sinCambios:true}));
+  toast(r==='synced'?('Sin cambios · '+(eq.codigo||'equipo')+' al día'):saveMsg(r,eq.codigo));
 }
 
 function uniq(f){ return [...new Set(EQUIPOS.map(f).filter(Boolean))]; }
@@ -480,7 +498,7 @@ function openEditor(eq){
   $('#scrim').addEventListener('click',e=>{ if(e.target.id==='scrim') close(); });
   $('#mx').onclick=close; $('#mCancel').onclick=close;
   document.addEventListener('keydown',function onk(e){ if(e.key==='Escape'){close();document.removeEventListener('keydown',onk);} });
-  $('#mSave').onclick=async()=>{ await saveRecord(eq,{estado:$('#eEstado').value,ubicacion:$('#eUbic').value.trim(),obs:$('#eObs').value.trim()}); close(); toast('Dato registrado · '+(eq.codigo||'equipo')); };
+  $('#mSave').onclick=async()=>{ const r=await saveRecord(eq,{estado:$('#eEstado').value,ubicacion:$('#eUbic').value.trim(),obs:$('#eObs').value.trim()}); close(); toast(saveMsg(r,eq.codigo)); };
 }
 
 const namesCache={};
