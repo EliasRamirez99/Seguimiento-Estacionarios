@@ -273,12 +273,22 @@ function deadlines(W){
   while(next<SCHEME_START) next.setDate(next.getDate()+7);
   return {today, last:(last>=SCHEME_START?last:null), next};
 }
+function weekStartMon(d){ const x=midnight(d); const dow=x.getDay(); x.setDate(x.getDate()-(dow===0?6:dow-1)); return x; } // lunes 00:00 de la semana de d
 function regStatus(eq,st){
-  const W=tareaDay(eq.tarea), {today,last,next}=deadlines(W), iso=st&&st.lastUpdate;
-  if(!last) return {key:'prog',label:'Programado',cls:'neu',sub:cap(DAYNAMES[W])+' '+fmtDate(next),W};
-  if(iso && new Date(iso)>=last) return {key:'aldia',label:'Al día',cls:'ok',W};
-  if(last.getTime()===today.getTime()) return {key:'hoy',label:'Registrar hoy',cls:'warn',W};
-  const n=Math.round((today-last)/86400000);
+  // La carga es SEMANAL: registrar en cualquier momento de la semana (desde el lunes) cuenta como "al día".
+  // El día asignado solo marca el recordatorio ("Registrar hoy") y el vencimiento si pasó sin registrar.
+  const W=tareaDay(eq.tarea), today=midnight(new Date()), iso=st&&st.lastUpdate;
+  const ws=weekStartMon(today);
+  const assigned=new Date(ws); assigned.setDate(ws.getDate()+(W-1));           // día de carga de ESTA semana (Lun=1 … Vie=5)
+  const regThisWeek = iso && new Date(iso)>=ws;                               // ¿se registró ya en esta semana?
+  if(assigned<SCHEME_START){                                                  // su día de esta semana es anterior al inicio → todavía no le toca
+    let nx=new Date(assigned); while(nx<SCHEME_START||nx<today) nx.setDate(nx.getDate()+7);
+    return {key:'prog',label:'Programado',cls:'neu',sub:cap(DAYNAMES[W])+' '+fmtDate(nx),W};
+  }
+  if(regThisWeek) return {key:'aldia',label:'Al día',cls:'ok',W};
+  if(today<assigned) return {key:'prog',label:'Programado',cls:'neu',sub:cap(DAYNAMES[W])+' '+fmtDate(assigned),W};
+  if(today.getTime()===assigned.getTime()) return {key:'hoy',label:'Registrar hoy',cls:'warn',W};
+  const n=Math.round((today-assigned)/86400000);
   return {key:'vencido',label:'Vencido',cls:'crit',sub:'hace '+n+' d',W};
 }
 function cur(eq){ const s=STATE.get(eq._k)||{}; return {estado:s.estado||eq.estadoBase,ubicacion:s.ubicacion!=null?s.ubicacion:eq.ubicacionBase,obs:s.obs||'',lastUpdate:s.lastUpdate||null,by:s.by||null}; }
