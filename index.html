@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Parte Estacionarios OPS</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -6,6 +8,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
 /* Layout: panel operativo OPS — header fijo, banda de alerta, KPIs, filtros, tabla editable, panel de estadísticas */
 :root{
@@ -184,6 +188,7 @@ tbody tr:last-child td{border-bottom:none}
       <span>Último dato cargado</span>
       <b id="lastGlobal">—</b>
     </div>
+    <button class="iconbtn" id="nameBtn" title="Tu nombre — aparece como responsable de tus cargas" style="width:auto;padding:0 12px;gap:6px;font-size:.8rem;font-weight:600">👤 <span id="nameLbl">Tu nombre</span></button>
     <button class="iconbtn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
   </div>
 </header>
@@ -264,7 +269,16 @@ const DAYNAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sáb
 const DAY_LABEL={5:'Generadores',1:'Zapato Compactador',2:'Chulengo',3:'Motosoldadora y Motocompresores',4:'el resto de los equipos'};
 function tareaDay(t){ return (t in DAY_BY_TAREA)?DAY_BY_TAREA[t]:DEFAULT_DAY; }
 const PALETTE=['#0e95cd','#1f9d57','#c9801f','#cf3f37','#7a5cc0','#1aa3a3','#d06ba0','#6b8e23','#c2593b','#2d7dd2','#8a8f98','#43b36b','#e0a44e','#9b6dd6','#df6a60','#3aa0a0','#b07cc6'];
-let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[], dbWritable=false;
+let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[], dbWritable=false, FDB=null, userName='';
+// Configuración de la base compartida (Firebase). La apiKey no es secreta (va en el frontend).
+const firebaseConfig = {
+  apiKey: "AIzaSyBzsyIqFfdkNDwGRb11yB_O3hFpA0NjMok",
+  authDomain: "seguimiento-estacionarios.firebaseapp.com",
+  projectId: "seguimiento-estacionarios",
+  storageBucket: "seguimiento-estacionarios.firebasestorage.app",
+  messagingSenderId: "620273138613",
+  appId: "1:620273138613:web:08341ec916b58c3734f7fc"
+};
 const charts={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -303,11 +317,12 @@ function cur(eq){ const s=STATE.get(eq._k)||{}; return {estado:s.estado||eq.esta
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
 function setSyncBar(state){
   const b=$('#syncBar'); if(!b) return;
-  if(state==='ok'){ b.hidden=false; b.className='ok'; b.innerHTML='<span>✅</span><div><span class="t">Conectado a la base compartida.</span> <small>Los cambios se guardan para todo el equipo y se ven en tiempo real.</small></div>'; }
-  else if(state==='readonly'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>👁️</span><div><span class="t">Solo lectura.</span> <small>Ves los datos del equipo pero no podés editar. Pedile al dueño del parte que te invite como <b>Editor</b>.</small></div>'; }
-  else if(state==='offline'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>⚠️</span><div><span class="t">No estás conectado a la base compartida.</span> <small>Tus cambios quedan solo en este navegador y NO se comparten. Abrí el link con tu sesión de Claude iniciada y con acceso de edición.</small></div>'; }
+  if(state==='ok'){ b.hidden=false; b.className='ok'; b.innerHTML='<span>✅</span><div><span class="t">Conectado a la base compartida.</span> <small>Lo que carga cualquiera se ve acá en tiempo real, para todo el equipo.</small></div>'; }
+  else if(state==='offline'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>⚠️</span><div><span class="t">Sin conexión con la base compartida.</span> <small>Revisá tu internet. Lo que cargues se guarda y se sincroniza solo al reconectar.</small></div>'; }
   else { b.hidden=true; }
 }
+function updateNameLabel(){ const l=$('#nameLbl'); if(l) l.textContent = userName || 'Tu nombre'; }
+function askName(){ const n=prompt('¿Cómo te llamás? Aparece como responsable de las cargas que hagas.', userName||''); if(n!=null){ userName=n.trim(); try{ localStorage.setItem('ops_user_name',userName); }catch(e){} updateNameLabel(); } }
 // Descarga: usa la capacidad del artifact si existe; si no (archivo local / navegador normal), descarga directa.
 async function saveFile(filename, data, mime){
   if(downloads){ try{ await downloads.save({filename, data}); return true; }catch(e){} }
@@ -332,26 +347,21 @@ async function boot(){
   initTheme(); wireEvents(); initPersistence();
 }
 
-async function initPersistence(){
+function initPersistence(){
   // 1) Arranca YA con lo guardado localmente en este navegador (nunca queda en blanco).
   loadLocal(); updateAll();
-  // 2) Resuelve capacidades (no bloquea el primer render).
-  try{ user=await claude.use('user'); if(user) uid=await user.id().catch(()=>null); }catch(e){ user=null; }
-  try{ downloads=await claude.use('downloads'); }catch(e){ downloads=null; }
-  try{ db=await claude.use('db'); }catch(e){ db=null; }
-  if(db){
-    let perm=null; try{ perm = (user&&user.can)? await user.can('data.write') : null; }catch(e){ perm=null; }
-    dbWritable = perm!==false;                       // true o null = optimista; false = solo lectura
-    setSyncBar(perm===false?'readonly':'ok');
+  try{ userName = localStorage.getItem('ops_user_name')||''; }catch(e){} updateNameLabel();
+  // 2) Conecta a la base compartida (Firebase).
+  try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); FDB = firebase.firestore(); }catch(e){ FDB=null; }
+  if(FDB){
     $('#persistNote').textContent='';
     try{
-      db.collection('registros').onSnapshot(snap=>{
-        const docs=(snap&&snap.docs)||[];
+      FDB.collection('registros').onSnapshot(snap=>{
         const m=new Map();
-        docs.forEach(doc=>{ try{ if(doc&&doc.exists===false) return; const d=(doc&&doc.data)?doc.data():doc; const id=doc&&doc.id; if(id&&d) m.set(id,Object.assign({},d)); }catch(_){} });
-        STATE=m; saveLocal(); updateAll();           // la base compartida es la fuente única de verdad
-      }, err=>{ db=null; dbWritable=false; setSyncBar('offline'); loadLocal(); updateAll(); });
-    }catch(e){ db=null; dbWritable=false; setSyncBar('offline'); }
+        snap.forEach(doc=>{ try{ const d=doc.data(); if(d) m.set(doc.id, d); }catch(_){} });
+        STATE=m; saveLocal(); updateAll(); setSyncBar('ok');   // la base compartida es la fuente única de verdad
+      }, err=>{ setSyncBar('offline'); });
+    }catch(e){ setSyncBar('offline'); }
   }else{
     setSyncBar('offline'); $('#persistNote').textContent='';
   }
@@ -360,13 +370,13 @@ function loadLocal(){ try{ const raw=localStorage.getItem('ops_registros_v2'); i
 function saveLocal(){ try{ const o={}; STATE.forEach((v,k)=>o[k]=v); localStorage.setItem('ops_registros_v2',JSON.stringify(o)); }catch(e){} }
 
 async function saveRecord(eq,patch){
-  const rec=Object.assign({},STATE.get(eq._k)||{},patch,{_k:eq._k,codigo:eq.codigo,lastUpdate:new Date().toISOString(),by:uid||null});
+  const rec=Object.assign({},STATE.get(eq._k)||{},patch,{_k:eq._k,codigo:eq.codigo,lastUpdate:new Date().toISOString(),by:(userName||null)});
   STATE.set(eq._k,rec);
   saveLocal(); updateAll();
-  if(db){ try{ await db.collection('registros').doc(eq._k).set(rec); return 'synced'; }catch(e){ dbWritable=false; setSyncBar('readonly'); return 'readonly'; } }
+  if(FDB){ try{ await FDB.collection('registros').doc(eq._k).set(rec); return 'synced'; }catch(e){ setSyncBar('offline'); return 'local'; } }
   return 'local';
 }
-function saveMsg(r,code){ return r==='synced'?('Dato registrado · '+(code||'equipo')):r==='readonly'?'⚠ Sin permiso para editar la base compartida':'⚠ Guardado solo en este navegador — no se comparte'; }
+function saveMsg(r,code){ return r==='synced'?('Dato registrado · '+(code||'equipo')):'Guardado — se sincroniza al reconectar'; }
 async function markNoChange(eq){
   const r=await saveRecord(eq,Object.assign({},cur(eq),{sinCambios:true}));
   toast(r==='synced'?('Sin cambios · '+(eq.codigo||'equipo')+' al día'):saveMsg(r,eq.codigo));
@@ -482,7 +492,7 @@ function renderAlert(){
 
 function openEditor(eq){
   const c=cur(eq), W=tareaDay(eq.tarea), root=$('#modalRoot');
-  const byTxt=c.by?' · por '+esc(namesCache[c.by]||'usuario'):'';
+  const byTxt=c.by?' · por '+esc(c.by):'';
   root.innerHTML='<div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true">'+
     '<div class="mhead"><div><h3>'+(eq.codigo?esc(eq.codigo):'Equipo sin código')+'</h3><div class="sub2" style="margin-top:3px">'+esc(eq.tarea)+' · '+esc(eq.familia)+'</div></div><button class="x" id="mx" aria-label="Cerrar">✕</button></div>'+
     '<div class="mbody">'+
@@ -641,8 +651,9 @@ function wireEvents(){
   $('#clearF').onclick=()=>{ ['#fBuscar','#fDia','#fFamilia','#fTarea','#fProp','#fEstado','#fObra','#fReg'].forEach(s=>$(s).value=''); render(); };
   $('#reportBtn').onclick=openReport;
   $('#goPend').onclick=()=>{ const {hoy}=counts(); $('#fReg').value=hoy>0?'hoy':'vencido'; render(); $('.tablewrap').scrollIntoView({behavior:'smooth'}); };
+  $('#nameBtn').onclick=askName;
   $('#tbody').addEventListener('click',e=>{
-    const be=e.target.closest('[data-edit]'); if(be){ const eq=EQUIPOS.find(x=>x._k===be.getAttribute('data-edit')); if(eq){ if(cur(eq).by) resolveNames([cur(eq).by]); openEditor(eq); } return; }
+    const be=e.target.closest('[data-edit]'); if(be){ const eq=EQUIPOS.find(x=>x._k===be.getAttribute('data-edit')); if(eq) openEditor(eq); return; }
     const bs=e.target.closest('[data-same]'); if(bs){ const eq=EQUIPOS.find(x=>x._k===bs.getAttribute('data-same')); if(eq) markNoChange(eq); }
   });
 }
