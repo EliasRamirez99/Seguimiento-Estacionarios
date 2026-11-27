@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
 /* Layout: panel operativo OPS — header fijo, banda de alerta, KPIs, filtros, tabla editable, panel de estadísticas */
 :root{
@@ -188,7 +189,7 @@ tbody tr:last-child td{border-bottom:none}
       <span>Último dato cargado</span>
       <b id="lastGlobal">—</b>
     </div>
-    <button class="iconbtn" id="nameBtn" title="Tu nombre — aparece como responsable de tus cargas" style="width:auto;padding:0 12px;gap:6px;font-size:.8rem;font-weight:600">👤 <span id="nameLbl">Tu nombre</span></button>
+    <button class="iconbtn" id="sessionBtn" style="width:auto;padding:0 12px;gap:6px;font-size:.8rem;font-weight:600">🔑 <span id="sessionLbl">Iniciar sesión</span></button>
     <button class="iconbtn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
   </div>
 </header>
@@ -269,7 +270,7 @@ const DAYNAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sáb
 const DAY_LABEL={5:'Generadores',1:'Zapato Compactador',2:'Chulengo',3:'Motosoldadora y Motocompresores',4:'el resto de los equipos'};
 function tareaDay(t){ return (t in DAY_BY_TAREA)?DAY_BY_TAREA[t]:DEFAULT_DAY; }
 const PALETTE=['#0e95cd','#1f9d57','#c9801f','#cf3f37','#7a5cc0','#1aa3a3','#d06ba0','#6b8e23','#c2593b','#2d7dd2','#8a8f98','#43b36b','#e0a44e','#9b6dd6','#df6a60','#3aa0a0','#b07cc6'];
-let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[], dbWritable=false, FDB=null, userName='';
+let EQUIPOS=[], STATE=new Map(), db=null, user=null, downloads=null, uid=null, OBRAS=[], dbWritable=false, FDB=null, userName='', AUTH=null, currentUser=null;
 // Configuración de la base compartida (Firebase). La apiKey no es secreta (va en el frontend).
 const firebaseConfig = {
   apiKey: "AIzaSyBzsyIqFfdkNDwGRb11yB_O3hFpA0NjMok",
@@ -321,8 +322,62 @@ function setSyncBar(state){
   else if(state==='offline'){ b.hidden=false; b.className='warn'; b.innerHTML='<span>⚠️</span><div><span class="t">Sin conexión con la base compartida.</span> <small>Revisá tu internet. Lo que cargues se guarda y se sincroniza solo al reconectar.</small></div>'; }
   else { b.hidden=true; }
 }
-function updateNameLabel(){ const l=$('#nameLbl'); if(l) l.textContent = userName || 'Tu nombre'; }
-function askName(){ const n=prompt('¿Cómo te llamás? Aparece como responsable de las cargas que hagas.', userName||''); if(n!=null){ userName=n.trim(); try{ localStorage.setItem('ops_user_name',userName); }catch(e){} updateNameLabel(); } }
+function updateSessionBtn(){
+  const b=$('#sessionBtn'), l=$('#sessionLbl'); if(!b||!l) return;
+  if(currentUser){ b.firstChild.textContent='👤 '; l.textContent = userName || 'Sesión'; b.title='Sesión iniciada — tocá para cerrar sesión'; }
+  else { b.firstChild.textContent='🔑 '; l.textContent='Iniciar sesión'; b.title='Iniciá sesión para poder cargar/actualizar'; }
+}
+function sessionBtnClick(){
+  if(currentUser){ if(confirm('¿Cerrar sesión de '+(userName||currentUser.email)+'?')){ try{ AUTH.signOut(); }catch(e){} } }
+  else openLogin();
+}
+function requireLogin(){ if(currentUser) return true; openLogin('Para cargar o actualizar datos necesitás iniciar sesión.'); return false; }
+function openLogin(msg){
+  if(!AUTH){ toast('El login todavía no está habilitado'); return; }
+  const root=$('#modalRoot');
+  root.innerHTML='<div class="scrim" id="scrim"><div class="modal" style="width:min(420px,100%)"><div class="mhead"><div><h3 id="lgTitle">Iniciar sesión</h3><div class="sub2" style="margin-top:3px">Parte de Equipos Estacionarios — OPS</div></div><button class="x" id="mx">✕</button></div>'+
+    '<div class="mbody">'+(msg?'<div style="font-size:.84rem;color:var(--warn);background:var(--warn-soft);border-radius:8px;padding:9px 11px;margin-bottom:14px">'+esc(msg)+'</div>':'')+
+      '<div class="mfld" id="fldName" hidden><label>Nombre y apellido</label><input id="lgName" placeholder="Ej. Nicolas Bustamante" autocomplete="name"></div>'+
+      '<div class="mfld"><label>Email</label><input id="lgEmail" type="email" placeholder="tucorreo@ejemplo.com" autocomplete="email"></div>'+
+      '<div class="mfld"><label>Contraseña</label><input id="lgPass" type="password" placeholder="Mínimo 6 caracteres" autocomplete="current-password"></div>'+
+      '<div id="lgErr" style="font-size:.82rem;color:var(--crit);min-height:1em"></div>'+
+      '<div style="font-size:.82rem;color:var(--muted);margin-top:4px">¿Primera vez? <a href="#" id="lgToggle" style="font-weight:600">Crear una cuenta</a></div>'+
+    '</div>'+
+    '<div class="mfoot"><button class="btn ghost" id="lgCancel">Cancelar</button><button class="btn pri" id="lgGo">Ingresar</button></div>'+
+  '</div></div>';
+  let mode='in';
+  const close=()=>root.innerHTML='';
+  $('#scrim').addEventListener('click',e=>{ if(e.target.id==='scrim') close(); });
+  $('#mx').onclick=close; $('#lgCancel').onclick=close;
+  $('#lgToggle').onclick=e=>{ e.preventDefault(); mode=(mode==='in')?'up':'in'; $('#fldName').hidden=(mode==='in'); $('#lgTitle').textContent=(mode==='in')?'Iniciar sesión':'Crear cuenta'; $('#lgGo').textContent=(mode==='in')?'Ingresar':'Crear cuenta'; $('#lgToggle').textContent=(mode==='in')?'Crear una cuenta':'Ya tengo cuenta'; $('#lgErr').textContent=''; };
+  $('#lgGo').onclick=async()=>{
+    const email=$('#lgEmail').value.trim(), pass=$('#lgPass').value, nm=($('#lgName')?$('#lgName').value.trim():'');
+    const err=$('#lgErr'); err.textContent='';
+    if(!email||!pass){ err.textContent='Completá email y contraseña.'; return; }
+    $('#lgGo').disabled=true;
+    try{
+      if(mode==='up'){
+        if(!nm){ err.textContent='Poné tu nombre y apellido.'; $('#lgGo').disabled=false; return; }
+        const cred=await AUTH.createUserWithEmailAndPassword(email,pass);
+        try{ await cred.user.updateProfile({displayName:nm}); }catch(e){}
+        userName=nm;
+      } else {
+        await AUTH.signInWithEmailAndPassword(email,pass);
+      }
+      close(); toast('Sesión iniciada');
+    }catch(e){
+      $('#lgGo').disabled=false;
+      const c=(e&&e.code)||'';
+      err.textContent = c.indexOf('wrong-password')>=0||c.indexOf('invalid-credential')>=0?'Contraseña incorrecta.':
+        c.indexOf('user-not-found')>=0?'No existe una cuenta con ese email. Tocá "Crear una cuenta".':
+        c.indexOf('email-already-in-use')>=0?'Ese email ya tiene cuenta. Tocá "Ya tengo cuenta".':
+        c.indexOf('weak-password')>=0?'La contraseña debe tener al menos 6 caracteres.':
+        c.indexOf('invalid-email')>=0?'El email no es válido.':
+        c.indexOf('operation-not-allowed')>=0?'El login por email aún no está habilitado en Firebase.':
+        ('No se pudo: '+(e.message||c));
+    }
+  };
+}
 // Descarga: usa la capacidad del artifact si existe; si no (archivo local / navegador normal), descarga directa.
 async function saveFile(filename, data, mime){
   if(downloads){ try{ await downloads.save({filename, data}); return true; }catch(e){} }
@@ -350,9 +405,10 @@ async function boot(){
 function initPersistence(){
   // 1) Arranca YA con lo guardado localmente en este navegador (nunca queda en blanco).
   loadLocal(); updateAll();
-  try{ userName = localStorage.getItem('ops_user_name')||''; }catch(e){} updateNameLabel();
-  // 2) Conecta a la base compartida (Firebase).
-  try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); FDB = firebase.firestore(); }catch(e){ FDB=null; }
+  // 2) Conecta a la base compartida (Firebase) y a la autenticación.
+  try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); FDB = firebase.firestore(); AUTH = firebase.auth(); }catch(e){ FDB=null; }
+  if(AUTH){ try{ AUTH.onAuthStateChanged(u=>{ currentUser=u||null; userName = u?((u.displayName||u.email||'').trim()):''; updateSessionBtn(); updateAll(); }); }catch(e){ AUTH=null; } }
+  updateSessionBtn();
   if(FDB){
     $('#persistNote').textContent='';
     try{
@@ -370,13 +426,14 @@ function loadLocal(){ try{ const raw=localStorage.getItem('ops_registros_v2'); i
 function saveLocal(){ try{ const o={}; STATE.forEach((v,k)=>o[k]=v); localStorage.setItem('ops_registros_v2',JSON.stringify(o)); }catch(e){} }
 
 async function saveRecord(eq,patch){
+  if(!currentUser) return 'noauth';
   const rec=Object.assign({},STATE.get(eq._k)||{},patch,{_k:eq._k,codigo:eq.codigo,lastUpdate:new Date().toISOString(),by:(userName||null)});
   STATE.set(eq._k,rec);
   saveLocal(); updateAll();
   if(FDB){ try{ await FDB.collection('registros').doc(eq._k).set(rec); return 'synced'; }catch(e){ setSyncBar('offline'); return 'local'; } }
   return 'local';
 }
-function saveMsg(r,code){ return r==='synced'?('Dato registrado · '+(code||'equipo')):'Guardado — se sincroniza al reconectar'; }
+function saveMsg(r,code){ return r==='synced'?('Dato registrado · '+(code||'equipo')):r==='noauth'?'Iniciá sesión para cargar':'Guardado — se sincroniza al reconectar'; }
 async function markNoChange(eq){
   const r=await saveRecord(eq,Object.assign({},cur(eq),{sinCambios:true}));
   toast(r==='synced'?('Sin cambios · '+(eq.codigo||'equipo')+' al día'):saveMsg(r,eq.codigo));
@@ -651,10 +708,10 @@ function wireEvents(){
   $('#clearF').onclick=()=>{ ['#fBuscar','#fDia','#fFamilia','#fTarea','#fProp','#fEstado','#fObra','#fReg'].forEach(s=>$(s).value=''); render(); };
   $('#reportBtn').onclick=openReport;
   $('#goPend').onclick=()=>{ const {hoy}=counts(); $('#fReg').value=hoy>0?'hoy':'vencido'; render(); $('.tablewrap').scrollIntoView({behavior:'smooth'}); };
-  $('#nameBtn').onclick=askName;
+  $('#sessionBtn').onclick=sessionBtnClick;
   $('#tbody').addEventListener('click',e=>{
-    const be=e.target.closest('[data-edit]'); if(be){ const eq=EQUIPOS.find(x=>x._k===be.getAttribute('data-edit')); if(eq) openEditor(eq); return; }
-    const bs=e.target.closest('[data-same]'); if(bs){ const eq=EQUIPOS.find(x=>x._k===bs.getAttribute('data-same')); if(eq) markNoChange(eq); }
+    const be=e.target.closest('[data-edit]'); if(be){ if(!requireLogin()) return; const eq=EQUIPOS.find(x=>x._k===be.getAttribute('data-edit')); if(eq) openEditor(eq); return; }
+    const bs=e.target.closest('[data-same]'); if(bs){ if(!requireLogin()) return; const eq=EQUIPOS.find(x=>x._k===bs.getAttribute('data-same')); if(eq) markNoChange(eq); }
   });
 }
 function initTheme(){
