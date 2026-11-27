@@ -1,6 +1,11 @@
 PARTE / SEGUIMIENTO DE EQUIPOS ESTACIONARIOS — OPS
 ===================================================
 
+>>> APP PARA USAR (compartida, sin login, para TODOS):
+>>> https://eliasramirez99.github.io/Seguimiento-Estacionarios/
+>>> Los datos se guardan en una base compartida (Firebase) y se ven en vivo.
+>>> Cada uno toca "Tu nombre" arriba. El viejo link de Claude quedó discontinuado.
+
 REPOSITORIO (GitHub): https://github.com/EliasRamirez99/Seguimiento-Estacionarios
 
 HAY DOS FORMAS DE USARLO
